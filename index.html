@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>OLS Overlay</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root{
+    /* -------- Standard sizes -------- */
+    --overlay-w: 1160px;
+    --overlay-h: 80px;
+    --logo-size: 50px;
+    --player-w: 275px;
+    --player-h: 220px;
+    --caption-h: 36px;
+    --pips-w: 14px;
+    --pips-h: 65px;
+
+    /* Fade duration for player image crossfade */
+    --fade-ms: 250ms;
+    
+    /* -------- Standard styling -------- */
+    --player-fit: contain;
+    --caption-max-lines: 2; 
+    
+    /* -------- Pip colors: Blue side -------- */
+    --blue-pip-unselected-bg: #47525c;
+    --blue-pip-unselected-border: #8da8ba;
+    --blue-pip-filled-bg: #8da8ba;
+    --blue-pip-filled-border: #8da8ba;
+    
+    /* -------- Pip colors: Red side -------- */
+    --red-pip-unselected-bg: #51514b;
+    --red-pip-unselected-border: #cbc59d;
+    --red-pip-filled-bg: #cbc59d;
+    --red-pip-filled-border: #cbc59d;
+
+    /* -------- Unique positioning: Overlay -------- */
+    --overlay-left: 390px;
+    --overlay-top: 0px;
+
+    /* -------- Unique positioning: Logos -------- */
+    --blue-logo-left: 415px;
+    --blue-logo-top: 7px;
+    --red-logo-left: 1475px;
+    --red-logo-top: 7px;
+
+    /* -------- Unique positioning: Players -------- */
+    --blue-player-left: 315px;
+    --blue-player-top: 855px;
+    --red-player-left: 1350px;
+    --red-player-top: 855px;
+
+    /* -------- Unique positioning: Pips -------- */
+    --blue-pips-left: 495px;
+    --blue-pips-top: 0px;
+    --red-pips-right: 475px;
+    --red-pips-top: 0px;
+  }
+
+  /* === Fixed 1920×1080 page for OBS (no internal scaling) === */
+  html, body {
+    width: 1920px;
+    height: 1080px;
+    margin: 0;
+    background: none;
+    color: #fff;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    overflow: auto;
+  }
+  #stage { position: relative; width: 100%; height: 100%; }
+
+  /* === Overlays === */
+  .overlay {
+    position: absolute;
+    pointer-events: none;
+    user-select: none;
+    display: block;
+  }
+  #overlayTop {
+    left: var(--overlay-left);
+    top: var(--overlay-top);
+    width: var(--overlay-w);
+    height: var(--overlay-h);
+    object-fit: fill;
+  }
+  /* HUD: full-width, auto height, pinned to bottom */
+  #hudBottom  {
+    left: 0; bottom: 0; width: 100%; height: auto;
+  }
+
+  /* === Logos === */
+  #blueLogo, #redLogo {
+    position: absolute;
+    object-fit: contain;
+    display: block;
+    width: var(--logo-size);
+    height: var(--logo-size);
+  }
+  #blueLogo { left: var(--blue-logo-left); top: var(--blue-logo-top); }
+  #redLogo  { left: var(--red-logo-left);  top: var(--red-logo-top); }
+
+  /* === Player slots: fixed frame (image + overlay caption) === */
+  .playerSlot{ 
+    position: absolute; 
+    display: block;
+    width: var(--player-w);
+    height: var(--player-h);
+  }
+  #blueSlot{ left: var(--blue-player-left); top: var(--blue-player-top); }
+  #redSlot{  left: var(--red-player-left);  top: var(--red-player-top); }
+
+  .playerFrame{
+    position: relative;
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 12px; background: none; overflow: hidden;
+  }
+  .playerImg{
+    display: block;
+    width: 100%; height: 100%;
+    object-fit: var(--player-fit);
+    object-position: center;
+    /* fade support */
+    opacity: 1;
+    transition: opacity var(--fade-ms) ease;
+    will-change: opacity;
+  }
+  /* fades to 0 before swapping src, then back to 1 on load */
+  .playerImg.fading{
+    opacity: 0;
+  }
+  .playerName{
+    position: absolute; left: 0; right: 0; bottom: 0;
+
+    /* keep your base bar height */
+    min-height: var(--caption-h);
+
+    /* allow multiple lines */
+    white-space: normal;              /* was: nowrap */
+    word-break: break-word;
+    overflow: hidden;
+
+    /* bottom-align the text so new lines “move up” */
+    display: flex;
+    flex-direction: column;           /* stack lines vertically */
+    justify-content: flex-end;        /* push text to the bottom */
+    align-items: center;              /* center horizontally */
+
+    /* visual styling (unchanged) */
+    padding: 6px 10px;
+    /* background: rgba(0,0,0,0.7); */
+    color: #fff;
+    font-weight: 700;
+    font-size: 30px;
+    letter-spacing: .2px;
+    text-align: center;
+    max-height: calc(var(--caption-h) * var(--caption-max-lines));
+    overflow: visible;
+  }
+  .outlined {
+    text-shadow:
+      -1px -1px 0 #000,  
+      1px -1px 0 #000,
+      -1px  1px 0 #000,
+      1px  1px 0 #000;
+  }
+
+  /* Optional: center score text (remove if baked into PNG) */
+  #meta {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    bottom: 12px; font-size: 14px; opacity: .7;
+  }
+  /* score and game tag removed per user request */
+
+  /* === Win pips (vertical, top fills first) === */
+  .scorePips{
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-evenly;
+    gap: 0;
+    pointer-events: none;
+    
+    /* Standard sizing only */
+    width: var(--pips-w);
+    height: var(--pips-h);
+    /* background-color: red; */
+  }
+
+  /* Unique positioning and color assignment */
+  #bluePips{
+    left: var(--blue-pips-left);
+    top: var(--blue-pips-top);
+    --pip-unselected-bg: var(--blue-pip-unselected-bg);
+    --pip-unselected-border: var(--blue-pip-unselected-border);
+    --pip-filled-bg: var(--blue-pip-filled-bg);
+    --pip-filled-border: var(--blue-pip-filled-border);
+  }
+
+  #redPips{
+    right: var(--red-pips-right);
+    top: var(--red-pips-top);
+    --pip-unselected-bg: var(--red-pip-unselected-bg);
+    --pip-unselected-border: var(--red-pip-unselected-border);
+    --pip-filled-bg: var(--red-pip-filled-bg);
+    --pip-filled-border: var(--red-pip-filled-border);
+  }
+
+  /* individual squares (size set dynamically by JS to fit container) */
+  .pip{
+    border-radius: 2px;
+    border: 2px solid var(--pip-unselected-border);
+    background: var(--pip-unselected-bg);
+    transition: background .18s ease, border-color .18s ease, transform .18s ease;
+    transform: scale(.98);
+  }
+  .pip.filled{
+    background: var(--pip-filled-bg);
+    border-color: var(--pip-filled-border);
+    transform: scale(1);
+  }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <!-- PNG overlays -->
+    <img id="overlayTop" class="overlay" src="Top_HUD.png" alt="Top overlay" />
+    <img id="hudBottom"  class="overlay" src="Scoreboard_HUD.png" alt="Bottom HUD" />
+
+    <!-- Logos -->
+    <img id="blueLogo" alt="Blue Logo" />
+    <img id="redLogo"  alt="Red Logo"  />
+
+    <!-- Win pips (containers that auto-split into squares) -->
+    <div id="bluePips" class="scorePips" aria-label="Blue wins"></div>
+    <div id="redPips"  class="scorePips" aria-label="Red wins"></div>
+
+    <!-- Player slideshows (fixed-size frames + overlay caption) -->
+    <div id="blueSlot" class="playerSlot">
+      <div class="playerFrame">
+        <img class="playerImg" id="blueImg" onerror="this.src='Logos/Base_Player.png'" />
+        <div class="playerName outlined" id="blueName">—</div>
+      </div>
+    </div>
+    <div id="redSlot" class="playerSlot">
+      <div class="playerFrame">
+        <img class="playerImg" id="redImg" onerror="this.src='Logos/Base_Player.png'" />
+        <div class="playerName outlined" id="redName">—</div>
+      </div>
+    </div>
+
+  </div>
+
+<script type="module">
+  /* ========= CONFIG ========= */
+  const SHEET_ID = "1WJw0DLuSXxjBSn4E5XdjVPIHc8QhZivsFQeol5sQs_E";
+
+  /* Map game -> sheet range */
+  const GAME_RANGES = {
+    1: "O4:R4",
+    2: "O10:R10",
+    3: "O16:R16",
+    4: "O22:R22",
+    5: "O28:R28",
+    6: "O34:R34",
+  };
+
+  const SLIDE_MS = 3000;     // per-player duration
+  const FADE_MS = 250;       // keep in sync with --fade-ms
+  const GID = 197737629;     // your sheet tab gid
+
+  /* ========= Helpers ========= */
+  const qs = new URLSearchParams(location.search);
+  const gameParam = Number(qs.get("game")) || 1;
+  const GAME = Math.min(6, Math.max(1, Math.floor(gameParam)));
+  const PIPS = Math.max(1, Math.min(5, Number(qs.get('pips')) || 2)); // 2 => Bo3, 3 => Bo5
+
+  function csvUrlForGame(game){
+    const range = GAME_RANGES[game] || GAME_RANGES[1];
+    return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}&range=${encodeURIComponent(range)}`;
+  }
+
+  const pretty = s => String(s).replace(/_/g, " ");
+  const teamFolder = name => name.trim().replace(/\s+/g, "_") + "_Team";
+
+  async function fetchText(url){
+    const sep = url.includes("?") ? "&" : "?";
+    const res = await fetch(url + `${sep}_ts=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return await res.text();
+  }
+
+  function parseCsvLine(line){ return line.split(",").map(s=>s.trim()); }
+
+  async function readPlayers(folder){
+    try {
+      const txt = await fetchText(`Logos/${folder}/players.txt`);
+      return txt.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    } catch { return []; }
+  }
+
+  /* ========= Slideshows ========= */
+  const slideState = {
+    blue: { list: [], idx: 0, folder: "", timer: null, fadeT: null, imgEl: blueImg, nameEl: blueName },
+    red:  { list: [], idx: 0, folder: "", timer: null, fadeT: null, imgEl: redImg,  nameEl: redName  }
+  };
+
+  function swapImageWithFade(s, newSrc){
+    const img = s.imgEl;
+    const hasSrc = !!img.getAttribute('src');
+
+    // First image: start hidden, fade in only
+    if (!hasSrc){
+      img.classList.add('fading');
+      img.onload = () => requestAnimationFrame(() => img.classList.remove('fading'));
+      img.src = newSrc;
+      return;
+    }
+
+    // Subsequent images: fade out, swap, then fade in
+    if (s.fadeT) clearTimeout(s.fadeT);
+    img.classList.add('fading'); // fade to 0
+    s.fadeT = setTimeout(() => {
+      img.onload = () => requestAnimationFrame(() => img.classList.remove('fading'));
+      img.src = newSrc;
+    }, FADE_MS);
+  }
+
+  function showNext(side){
+    const s = slideState[side];
+    if (!s.list.length) { s.imgEl.removeAttribute("src"); s.nameEl.textContent = "—"; return; }
+    const raw = s.list[s.idx % s.list.length];
+    s.idx++;
+    const src = `Logos/${s.folder}/${encodeURIComponent(raw)}.png?${Date.now()}`;
+    swapImageWithFade(s, src);
+    s.nameEl.textContent = pretty(raw);
+  }
+
+  function startShow(side){
+    const s = slideState[side];
+    if (s.timer) clearInterval(s.timer);
+    showNext(side);
+    s.timer = setInterval(() => showNext(side), SLIDE_MS);
+  }
+
+  async function setTeam(side, teamName){
+    const folder = teamFolder(teamName);
+    (side === "blue" ? blueLogo : redLogo).src = `Logos/${folder}/Logo.png?${Date.now()}`;
+
+    slideState[side].folder = folder;
+    slideState[side].list = await readPlayers(folder);
+    slideState[side].idx = 0;
+    startShow(side);
+  }
+
+  /* ========= Win pips ========= */
+  function layoutPipsFor(container){
+    const containerWidth = container.clientWidth;
+    const containerHeight = container.clientHeight;
+    
+    // Square size = minimum of (containerHeight/PIPS) OR containerWidth
+    const maxPipHeightPerSlot = containerHeight / PIPS;
+    const pipSize = Math.min(maxPipHeightPerSlot, containerWidth);
+    
+    // Make all pips perfect squares (no gap needed - space-evenly handles spacing)
+    const pips = container.querySelectorAll('.pip');
+    pips.forEach(pip => {
+      pip.style.width = pipSize + 'px';
+      pip.style.height = pipSize + 'px';
+      pip.style.flexShrink = '0';
+      pip.style.flexGrow = '0';
+    });
+  }
+
+  function layoutAllPipContainers(){
+    layoutPipsFor(bluePips);
+    layoutPipsFor(redPips);
+  }
+  window.addEventListener('resize', layoutAllPipContainers);
+
+  function ensurePips(container){
+    if (container._builtFor === PIPS) { layoutPipsFor(container); return; }
+    container.innerHTML = "";
+    for (let i = 0; i < PIPS; i++){
+      const d = document.createElement("div");
+      d.className = "pip";
+      container.appendChild(d);
+    }
+    container._builtFor = PIPS;
+    layoutPipsFor(container);
+  }
+
+  function renderPips(container, score){
+    ensurePips(container);
+    const s = Math.max(0, Math.min(PIPS, Number(score) || 0)); // clamp
+    [...container.children].forEach((pip, i) => {
+      pip.classList.toggle("filled", i < s);
+    });
+  }
+
+  /* ========= Poll sheet & update ========= */
+  const CSV_URL = csvUrlForGame(GAME);
+
+  async function updateOnce(){
+    try {
+      const csv = await fetchText(CSV_URL);
+      const line = (csv.split(/\r?\n/).find(l => l.trim()) || "");
+      const [blueTeam, blueScore, redScore, redTeam] = parseCsvLine(line);
+
+      renderPips(bluePips, blueScore);
+      renderPips(redPips,  redScore);
+
+      const key = `${GAME}|${blueTeam}|${redTeam}`;
+      if (updateOnce._lastKey !== key){
+        updateOnce._lastKey = key;
+        await Promise.all([ setTeam("blue", blueTeam), setTeam("red", redTeam) ]);
+      }
+    } catch (e) {
+      meta.textContent = "Error: " + e.message;
+    }
+  }
+  updateOnce._lastKey = "";
+  setInterval(updateOnce, 4000);
+  updateOnce();
+
+  // initial pip layout once DOM paints
+  setTimeout(layoutAllPipContainers, 0);
+</script>
+</body>
+
+</html>
